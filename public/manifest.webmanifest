@@ -1,0 +1,12 @@
+{
+  "name": "Notestaker — Meeting Minutes",
+  "short_name": "Notestaker",
+  "description": "Speech-to-text meeting notes with speaker action items and automated minutes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7fb",
+  "theme_color": "#4f6bed",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
