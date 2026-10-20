@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Notestaker",
+    "slug": "notestaker",
+    "scheme": "notestaker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.notestaker.app"
+    },
+    "android": {
+      "package": "com.notestaker.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#4F6BED",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Notestaker records meetings so it can transcribe them and write minutes.",
+          "enableBackgroundRecording": true
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Notestaker records meetings so it can transcribe them and write minutes.",
+          "speechRecognitionPermission": "Notestaker turns speech into a live meeting transcript."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Notestaker reads the meeting you pick to fill in its title and attendee names.",
+          "remindersPermission": false
+        }
+      ],
+      "expo-sharing"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "tsconfigPaths": true
+    }
+  }
+}

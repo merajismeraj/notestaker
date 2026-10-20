@@ -1,6 +1,9 @@
 # Notestaker
 
-Mobile-first meeting notes PWA: speech-to-text transcript with speakers → AI minutes with a summary, discussion points, decisions, and **action items grouped by person**.
+Meeting notes with speech-to-text: transcript with speakers → AI minutes with a summary, discussion points, decisions, and **action items grouped by person**.
+
+- **Web app (PWA) + backend:** this directory (Next.js)
+- **iOS & Android app:** [`mobile/`](mobile/README.md) (Expo). It uses this server as its backend and shares its core logic from `src/lib`.
 
 ## Features
 
@@ -39,6 +42,7 @@ src/app/page.tsx              meeting list
 src/app/m/[id]/page.tsx       capture + transcript + minutes screen
 src/app/api/minutes           Claude (claude-opus-5-5) → structured minutes (Zod schema)
 src/app/api/transcribe        Deepgram nova-3 diarization proxy (keeps the key server-side)
+src/app/api/deepgram-token    short-lived Deepgram token so the mobile app uploads audio directly
 src/lib/useSpeech.ts          Web Speech wrapper, auto-restarts on mobile silence timeouts
 src/lib/importers.ts          pasted-transcript parser, diarization → participants mapping
 src/lib/schema.ts             minutes schema shared by server and UI
