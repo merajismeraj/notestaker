@@ -27,6 +27,14 @@ export type Meeting = {
   /** Action item keys (owner|task) the user ticked off. */
   done?: string[];
   hasAudio?: boolean;
+  /** Linked Google Calendar event; invitees seed speaker names. */
+  calendar?: {
+    eventId: string;
+    start: string;
+    end: string;
+    link?: string;
+    invitees: { name: string; email: string }[];
+  };
 };
 
 export const PALETTE = [

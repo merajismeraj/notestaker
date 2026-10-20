@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarSheet } from "@/components/CalendarSheet";
 import { MinutesView } from "@/components/MinutesView";
 import {
   initials,
@@ -14,14 +15,15 @@ import {
   type CaptureMode,
 } from "@/components/Sheets";
 import { Transcript } from "@/components/Transcript";
-import { fromDiarized, parsePasted, pruneUnused } from "@/lib/importers";
+import { calendarConfigured, type CalendarEvent } from "@/lib/gcal";
+import { fromDiarized, mergeByName, parsePasted, pruneUnused, withInvitees } from "@/lib/importers";
 import { minutesToMarkdown } from "@/lib/markdown";
 import type { Minutes } from "@/lib/schema";
 import { deleteMeeting, getMeeting, putAudio, saveMeeting } from "@/lib/store";
 import { fmtClock, uid, type Meeting, type Segment } from "@/lib/types";
 import { speechSupported, useSpeech } from "@/lib/useSpeech";
 
-type Sheet = null | "speakers" | "mode" | "paste";
+type Sheet = null | "speakers" | "mode" | "paste" | "calendar";
 type WakeLock = { release: () => Promise<void> };
 
 export default function MeetingPage() {
@@ -75,6 +77,28 @@ export default function MeetingPage() {
       return next;
     });
   }, []);
+
+  // Keeps the tap-to-tag selection valid after speakers merge or disappear.
+  const setPeople = (m: Meeting, participants: Meeting["participants"], segments = m.segments): Meeting => {
+    const merged = mergeByName(participants, segments);
+    if (!merged.participants.some((p) => p.id === activeRef.current)) {
+      setActiveId(merged.participants[0]?.id ?? "");
+    }
+    return { ...m, participants: merged.participants, segments: merged.segments };
+  };
+
+  const linkEvent = (e: CalendarEvent) =>
+    update((m) => {
+      const invitees = e.invitees.map(({ name, email }) => ({ name, email }));
+      return setPeople(
+        {
+          ...m,
+          title: e.title,
+          calendar: { eventId: e.id, start: e.start, end: e.end, link: e.link, invitees },
+        },
+        withInvitees(m.participants, m.segments, invitees),
+      );
+    });
 
   const elapsed = () => baseRef.current + (Date.now() - startRef.current) / 1000;
 
@@ -216,6 +240,7 @@ export default function MeetingPage() {
           participants: meeting.participants
             .filter((p) => meeting.segments.some((s) => s.speakerId === p.id))
             .map((p) => p.name),
+          invitees: meeting.calendar?.invitees.map((i) => i.name) ?? [],
           segments: meeting.segments.map((s) => ({
             speaker: names.get(s.speakerId) ?? "Unknown",
             text: s.text,
@@ -319,10 +344,28 @@ export default function MeetingPage() {
                 {mode === "live" ? "Tap who's speaking" : "Speakers"}
               </span>
               <span className="spacer" />
+              {calendarConfigured() && (
+                <button className="btn small ghost" onClick={() => setSheet("calendar")}>
+                  📅 Calendar
+                </button>
+              )}
               <button className="btn small ghost" onClick={() => setSheet("speakers")}>
                 Edit names
               </button>
             </div>
+            {meeting.calendar && (
+              <button
+                className="muted small"
+                style={{ border: 0, background: "none", padding: "0 0 8px", textAlign: "left", cursor: "pointer" }}
+                onClick={() => setSheet("calendar")}
+              >
+                📅 {new Date(meeting.calendar.start).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                {" – "}
+                {new Date(meeting.calendar.end).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                {" · "}
+                {meeting.calendar.invitees.length} invited · change
+              </button>
+            )}
             <div className="speakers">
               {meeting.participants.map((p) => (
                 <button
@@ -354,6 +397,21 @@ export default function MeetingPage() {
                 </div>
               ) : (
                 <>
+                  {calendarConfigured() && !meeting.calendar && (
+                    <button
+                      className="mode"
+                      style={{ marginTop: 8 }}
+                      onClick={() => setSheet("calendar")}
+                    >
+                      <span className="ico">📅</span>
+                      <span>
+                        <strong>Link a Google Calendar event</strong>
+                        <span className="muted small">
+                          Pull the title and attendee names so speakers and action items get real names.
+                        </span>
+                      </span>
+                    </button>
+                  )}
                   <div className="section-title">Choose how to capture</div>
                   <ModePicker mode={mode} available={available} onPick={setMode} />
                 </>
@@ -425,17 +483,16 @@ export default function MeetingPage() {
                     ? () =>
                         update((m) => {
                           const map = new Map(renamable.map((a) => [a.label, a.name]));
-                          return {
-                            ...m,
-                            participants: m.participants.map((p) => ({
-                              ...p,
-                              name: map.get(p.name) ?? p.name,
-                            })),
-                            minutes: m.minutes && {
-                              ...m.minutes,
-                              attendees: m.minutes.attendees.map((a) => ({ ...a, label: a.name })),
+                          return setPeople(
+                            {
+                              ...m,
+                              minutes: m.minutes && {
+                                ...m.minutes,
+                                attendees: m.minutes.attendees.map((a) => ({ ...a, label: a.name })),
+                              },
                             },
-                          };
+                            m.participants.map((p) => ({ ...p, name: map.get(p.name) ?? p.name })),
+                          );
                         })
                     : undefined
                 }
@@ -512,10 +569,15 @@ export default function MeetingPage() {
         <SpeakersSheet
           participants={meeting.participants}
           usedIds={usedIds}
-          onSave={(participants) => {
-            update((m) => ({ ...m, participants }));
-            if (!participants.some((p) => p.id === activeId)) setActiveId(participants[0].id);
-          }}
+          suggestions={meeting.calendar?.invitees.map((i) => i.name)}
+          onSave={(participants) => update((m) => setPeople(m, participants))}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === "calendar" && (
+        <CalendarSheet
+          linkedId={meeting.calendar?.eventId}
+          onPick={linkEvent}
           onClose={() => setSheet(null)}
         />
       )}
@@ -530,16 +592,11 @@ export default function MeetingPage() {
               const r = parsePasted(text, m.participants, m.durationSec);
               const last = r.segments.at(-1)?.t ?? m.durationSec;
               const segments = [...m.segments, ...r.segments];
-              const participants = pruneUnused(r.participants, segments);
-              if (!participants.some((p) => p.id === activeRef.current)) {
-                setActiveId(participants[0].id);
-              }
-              return {
-                ...m,
-                participants,
+              return setPeople(
+                { ...m, durationSec: Math.max(m.durationSec, last) },
+                pruneUnused(r.participants, segments),
                 segments,
-                durationSec: Math.max(m.durationSec, last),
-              };
+              );
             });
           }}
         />

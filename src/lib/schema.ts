@@ -50,6 +50,7 @@ export const MinutesRequestSchema = z.object({
   date: z.string().max(64),
   lang: z.string().max(16),
   participants: z.array(z.string().max(80)).max(50),
+  invitees: z.array(z.string().max(120)).max(200).default([]),
   segments: z
     .array(
       z.object({

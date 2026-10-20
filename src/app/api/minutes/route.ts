@@ -17,6 +17,7 @@ Write minutes that someone who missed the meeting can act on:
 - Attribute every action item to the attendee who committed to it or was asked to do it. If ownership is genuinely unclear, use "Unassigned".
 - Only list a decision when the group actually agreed on something.
 - Speaker labels may be generic (e.g. "Speaker 2"). If the transcript clearly reveals a speaker's real name (they introduce themselves, or others address them by name in a way that identifies them), use that name in "name" and everywhere else; otherwise keep the label.
+- When a calendar guest list is provided, prefer the invitee's full name as written there once a speaker is identified, and use it to recognise people mentioned by first name. Being invited is not evidence of who a generic label is, and not every invitee attended or spoke.
 - Use attendee "name" values consistently in raised_by, made_by and owner.
 - Write in the same language as the transcript.`;
 
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
   if (!body.success) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
-  const { title, date, lang, participants, segments } = body.data;
+  const { title, date, lang, participants, invitees, segments } = body.data;
 
   const transcript = segments
     .map((s) => `[${fmtClock(s.t)}] ${s.speaker}: ${s.text.trim()}`)
@@ -42,6 +43,7 @@ export async function POST(req: Request) {
 Date: ${date}
 Language hint: ${lang}
 Speakers: ${participants.join(", ") || "unknown"}
+Calendar invitees: ${invitees.join(", ") || "not provided"}
 
 <transcript>
 ${transcript}

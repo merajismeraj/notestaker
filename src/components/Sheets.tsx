@@ -32,7 +32,7 @@ export const MODES: { id: CaptureMode; icon: string; label: string; hint: string
   },
 ];
 
-function Sheet({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+export function Sheet({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
@@ -99,11 +99,14 @@ export function ModeSheet(props: {
 export function SpeakersSheet({
   participants,
   usedIds,
+  suggestions = [],
   onSave,
   onClose,
 }: {
   participants: Participant[];
   usedIds: Set<string>;
+  /** Calendar invitee names offered while renaming. */
+  suggestions?: string[];
   onSave: (p: Participant[]) => void;
   onClose: () => void;
 }) {
@@ -116,7 +119,13 @@ export function SpeakersSheet({
       <h2>Speakers</h2>
       <p className="muted small" style={{ marginTop: -6 }}>
         Rename speakers to real names — every transcript line and action item follows.
+        {suggestions.length > 0 && " Pick an invitee's name to merge a detected speaker into them."}
       </p>
+      <datalist id="invitee-names">
+        {suggestions.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
       <div className="stack">
         {list.map((p) => (
           <div key={p.id} className="row" style={{ flexWrap: "nowrap" }}>
@@ -127,6 +136,7 @@ export function SpeakersSheet({
               className="field"
               value={p.name}
               onChange={(e) => set(p.id, e.target.value)}
+              list="invitee-names"
               aria-label="Speaker name"
             />
             <button

@@ -21,7 +21,11 @@ export function minutesToMarkdown(meeting: Meeting, m: Minutes): string {
   const done = new Set(meeting.done ?? []);
   const out: string[] = [];
   out.push(`# ${m.title}`, "", `**Date:** ${date}  `);
-  out.push(`**Attendees:** ${m.attendees.map((a) => a.name).join(", ")}`, "");
+  out.push(`**Attendees:** ${m.attendees.map((a) => a.name).join(", ")}  `);
+  if (meeting.calendar?.invitees.length) {
+    out.push(`**Invited:** ${meeting.calendar.invitees.map((i) => i.name).join(", ")}  `);
+  }
+  out.push("");
   out.push("## Summary", "", m.summary, "");
 
   if (m.attendees.length) {
