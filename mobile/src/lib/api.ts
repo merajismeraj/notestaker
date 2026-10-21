@@ -58,11 +58,15 @@ type DeepgramUtterance = { start: number; transcript: string; speaker?: number }
  * Uploads a local recording straight to Deepgram with a short-lived token from
  * our server, so long meetings aren't limited by the backend's body size.
  */
-export async function transcribeFile(uri: string, mimeType: string, lang: string): Promise<Utterance[]> {
+/** Short-lived Deepgram token minted by our server (the API key never ships in the app). */
+export async function getDeepgramToken(): Promise<string> {
   requireApi();
-  const { token } = await json<{ token: string }>(
-    await fetch(`${API_URL}/api/deepgram-token`, { method: "POST" }),
-  );
+  const res = await fetch(`${API_URL}/api/deepgram-token`, { method: "POST" });
+  return (await json<{ token: string }>(res)).token;
+}
+
+export async function transcribeFile(uri: string, mimeType: string, lang: string): Promise<Utterance[]> {
+  const token = await getDeepgramToken();
   const params = new URLSearchParams({
     model: "nova-3",
     diarize: "true",

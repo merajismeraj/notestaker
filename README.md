@@ -44,7 +44,8 @@ src/app/api/minutes           Claude (claude-opus-5-5) → structured minutes (Z
 src/app/api/transcribe        Deepgram nova-3 diarization proxy (keeps the key server-side)
 src/app/api/deepgram-token    short-lived Deepgram token so the mobile app uploads audio directly
 src/lib/useSpeech.ts          Web Speech wrapper, auto-restarts on mobile silence timeouts
-src/lib/importers.ts          pasted-transcript parser, diarization → participants mapping
+src/lib/importers.ts          pasted-transcript parser, diarization → participants mapping, live speaker resolution
+tests/                        `npm test`: live diarization parsing and speaker mapping
 src/lib/schema.ts             minutes schema shared by server and UI
 src/lib/gcal.ts               Google Identity Services token flow + Calendar events → invitees
 src/lib/store.ts              localStorage (meetings) + IndexedDB (audio)

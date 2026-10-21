@@ -88,16 +88,17 @@ export function fromDiarized(
 }
 
 
-function nextGenericName(participants: Participant[]) {
-  let n = 1;
-  while (participants.some((p) => p.name === `Speaker ${n}`)) n++;
-  return `Speaker ${n}`;
+/** Next "Speaker N" label, counting up from the highest in use so a renamed label is never reissued to a different voice. */
+export function nextGenericName(participants: Participant[]) {
+  const max = Math.max(0, ...participants.map((p) => Number(p.name.match(/^Speaker (\d+)$/)?.[1] ?? 0)));
+  return `Speaker ${max + 1}`;
 }
 
 /**
  * Collapses participants that share a name (case-insensitive), e.g. after
  * renaming "Speaker 2" to an invitee who is already a chip. Lines move to the
- * first participant with that name.
+ * first participant with that name. `remap` maps each merged-away id to the
+ * id that absorbed it.
  */
 export function mergeByName(participants: Participant[], segments: Segment[]) {
   const keep = new Map<string, Participant>();
@@ -108,8 +109,9 @@ export function mergeByName(participants: Participant[], segments: Segment[]) {
     if (first) remap.set(p.id, first.id);
     else keep.set(key, p);
   }
-  if (!remap.size) return { participants, segments };
+  if (!remap.size) return { participants, segments, remap };
   return {
+    remap,
     participants: [...keep.values()],
     segments: segments.map((s) =>
       remap.has(s.speakerId) ? { ...s, speakerId: remap.get(s.speakerId)! } : s,
@@ -126,4 +128,41 @@ export function withInvitees(
   let next = participants;
   for (const inv of invitees) [next] = ensure(next, inv.name);
   return pruneUnused(next, segments);
+}
+
+/**
+ * Finds (or creates) the participant for a live-diarization speaker key such
+ * as "dg:<session>:<connection>:<speaker>". `aliases` persists across calls:
+ * it records which participant a key was bound to and, via merge remaps, where
+ * that participant went after the user renamed or merged speakers.
+ * Unused "Speaker N" placeholders are claimed before new ones are created.
+ * Idempotent for the same inputs, so it is safe inside React state updaters.
+ */
+export function resolveLiveSpeaker(
+  participants: Participant[],
+  segments: Segment[],
+  aliases: Map<string, string>,
+  key: string,
+): { participants: Participant[]; id: string } {
+  const follow = (start: string) => {
+    let id = start;
+    for (let i = 0; i < 20 && aliases.has(id); i++) id = aliases.get(id)!;
+    return id;
+  };
+  const id = follow(key);
+  if (participants.some((p) => p.id === id)) return { participants, id };
+
+  const used = new Set(segments.map((s) => s.speakerId));
+  const claimed = new Set([...aliases.keys()].map(follow));
+  const free = participants.find((p) => GENERIC.test(p.name) && !used.has(p.id) && !claimed.has(p.id));
+  if (free) {
+    aliases.set(key, free.id);
+    return { participants, id: free.id };
+  }
+  const p = {
+    id: key,
+    name: nextGenericName(participants),
+    color: PALETTE[participants.length % PALETTE.length],
+  };
+  return { participants: [...participants, p], id: p.id };
 }

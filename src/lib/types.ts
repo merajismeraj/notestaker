@@ -27,6 +27,8 @@ export type Meeting = {
   /** Action item keys (owner|task) the user ticked off. */
   done?: string[];
   hasAudio?: boolean;
+  /** Live diarization speaker keys → participant ids (follows renames and merges). */
+  liveAliases?: Record<string, string>;
   /** Linked Google Calendar event; invitees seed speaker names. */
   calendar?: {
     eventId: string;

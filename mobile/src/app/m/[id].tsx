@@ -14,7 +14,14 @@ import {
   type ScrollViewInstance,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { fromDiarized, mergeByName, parsePasted, pruneUnused, withInvitees } from "@core/importers";
+import {
+  fromDiarized,
+  mergeByName,
+  parsePasted,
+  pruneUnused,
+  resolveLiveSpeaker,
+  withInvitees,
+} from "@core/importers";
 import { fmtClock, uid, type Meeting, type Participant, type Segment } from "@core/types";
 import { MinutesView } from "@/components/MinutesView";
 import {
@@ -32,6 +39,7 @@ import type { DeviceEvent } from "@/lib/calendar";
 import { shareMarkdownFile, sharePdf, shareText } from "@/lib/export";
 import { deleteMeeting, getMeeting, saveMeeting, setAudioUri } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
+import { useLiveDiarization, type LivePhrase } from "@/lib/useLiveDiarization";
 import { useLiveSpeech } from "@/lib/useLiveSpeech";
 import { useMeetingRecorder } from "@/lib/useMeetingRecorder";
 
@@ -58,6 +66,8 @@ export default function MeetingScreen() {
   const scrollRef = useRef<ScrollViewInstance>(null);
   const startRef = useRef(0);
   const baseRef = useRef(0);
+  // Last streamed line, so consecutive phrases from one speaker read as a paragraph.
+  const lastLiveRef = useRef<{ segId: string; end: number } | null>(null);
   const activeRef = useRef(activeId);
   useEffect(() => {
     activeRef.current = activeId;
@@ -75,10 +85,12 @@ export default function MeetingScreen() {
   // Keeps the tap-to-tag selection valid after speakers merge or disappear.
   const setPeople = (m: Meeting, participants: Participant[], segments = m.segments): Meeting => {
     const merged = mergeByName(participants, segments);
+    // Streamed speakers bound to a merged-away participant follow it to the survivor.
+    const liveAliases = { ...m.liveAliases, ...Object.fromEntries(merged.remap) };
     if (!merged.participants.some((p) => p.id === activeRef.current)) {
       setActiveId(merged.participants[0]?.id ?? "");
     }
-    return { ...m, participants: merged.participants, segments: merged.segments };
+    return { ...m, participants: merged.participants, segments: merged.segments, liveAliases };
   };
 
   useEffect(() => {
@@ -89,7 +101,7 @@ export default function MeetingScreen() {
       if (m.minutes) setTab("minutes");
       diarizationEnabled().then((on) => {
         setDiarize(on);
-        if (on && m.segments.length === 0) setMode("record");
+        if (on && m.segments.length === 0) setMode("stream");
       });
     });
   }, [id]);
@@ -101,7 +113,31 @@ export default function MeetingScreen() {
     update((m) => ({ ...m, segments: [...m.segments, seg] }));
   });
   const recorder = useMeetingRecorder();
-  const recording = live.listening || recorder.recording;
+
+  const addPhrases = (phrases: LivePhrase[]) =>
+    update((m) => {
+      let participants = m.participants;
+      const segments = [...m.segments];
+      const aliases = new Map(Object.entries(m.liveAliases ?? {}));
+      for (const ph of phrases) {
+        const r = resolveLiveSpeaker(participants, segments, aliases, ph.key);
+        participants = r.participants;
+        const t = baseRef.current + ph.start;
+        const last = segments.at(-1);
+        const prev = lastLiveRef.current;
+        if (last && prev && prev.segId === last.id && last.speakerId === r.id && t - prev.end < 1.5) {
+          segments[segments.length - 1] = { ...last, text: `${last.text} ${ph.text}` };
+        } else {
+          // Deterministic id keeps this updater idempotent under StrictMode.
+          segments.push({ id: `${ph.key}@${ph.start.toFixed(2)}`, speakerId: r.id, text: ph.text, t });
+        }
+        lastLiveRef.current = { segId: segments.at(-1)!.id, end: baseRef.current + ph.end };
+      }
+      return { ...m, participants, segments, liveAliases: Object.fromEntries(aliases) };
+    });
+  const stream = useLiveDiarization(meeting?.lang ?? "en-US", addPhrases);
+  const streaming = stream.status !== "idle";
+  const recording = live.listening || recorder.recording || streaming;
 
   useEffect(() => {
     if (!recording) return;
@@ -114,6 +150,7 @@ export default function MeetingScreen() {
     if (!diarize) {
       u.record = "Needs DEEPGRAM_API_KEY on your Notestaker server.";
       u.upload = u.record;
+      u.stream = u.record;
     }
     try {
       if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
@@ -152,7 +189,10 @@ export default function MeetingScreen() {
     setNow(startRef.current);
     setSession({ base: baseRef.current, at: startRef.current });
     try {
-      if (mode === "live") {
+      if (mode === "stream") {
+        lastLiveRef.current = null;
+        await stream.start();
+      } else if (mode === "live") {
         if (await live.start()) await activateKeepAwakeAsync(KEEP_AWAKE);
       } else if (mode === "record") {
         await recorder.start();
@@ -180,6 +220,10 @@ export default function MeetingScreen() {
     const dur = elapsed();
     const offset = baseRef.current;
     update((m) => ({ ...m, durationSec: dur }));
+    if (streaming) {
+      await stream.stop();
+      return;
+    }
     if (live.listening) {
       live.stop();
       deactivateKeepAwake(KEEP_AWAKE);
@@ -309,12 +353,14 @@ export default function MeetingScreen() {
           ))}
         </View>
 
-        <ErrorBanner message={error ?? live.error} />
+        <ErrorBanner message={error ?? live.error ?? (stream.status === "live" ? null : stream.error)} />
 
         {tab === "transcript" && (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-              <Muted style={{ flex: 1 }}>{mode === "live" ? "Tap who's speaking" : "Speakers"}</Muted>
+              <Muted style={{ flex: 1 }}>
+                {mode === "live" ? "Tap who's speaking" : mode === "stream" ? "Speakers · detected live" : "Speakers"}
+              </Muted>
               <Button small variant="ghost" label="📅 Calendar" onPress={() => setSheet("calendar")} />
               <Button small variant="ghost" label="Edit names" onPress={() => setSheet("speakers")} />
             </View>
@@ -328,7 +374,7 @@ export default function MeetingScreen() {
             )}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 10 }}>
               {meeting.participants.map((p) => {
-                const on = p.id === activeId;
+                const on = mode === "live" && p.id === activeId;
                 return (
                   <Pressable
                     key={p.id}
@@ -354,7 +400,14 @@ export default function MeetingScreen() {
               })}
             </ScrollView>
 
-            {meeting.segments.length === 0 && !live.interim ? (
+            {stream.reconnects > 0 && (
+              <Muted style={{ marginBottom: 8 }}>
+                Connection dropped {stream.reconnects}× (audio was buffered). Voices after a drop may get a new
+                label — rename it to merge.
+              </Muted>
+            )}
+
+            {meeting.segments.length === 0 && !live.interim && !stream.interim ? (
               busy === "transcribing" ? (
                 <Card style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
                   <ActivityIndicator color={t.accent} />
@@ -363,7 +416,7 @@ export default function MeetingScreen() {
               ) : recording ? (
                 <Card>
                   <Muted>
-                    {mode === "live"
+                    {mode === "live" || mode === "stream"
                       ? "Listening… start talking."
                       : "Recording. You can lock the screen; speakers appear when you stop."}
                   </Muted>
@@ -414,6 +467,12 @@ export default function MeetingScreen() {
                     <Avatar name={activeSpeaker?.name ?? "?"} color={activeSpeaker?.color ?? t.muted} />
                     <Text style={{ flex: 1, color: t.muted, fontStyle: "italic", fontSize: 15 }}>{live.interim}…</Text>
                   </View>
+                ) : null}
+                {stream.interim ? (
+                  <LiveInterim
+                    text={stream.interim.text}
+                    speaker={peekSpeaker(meeting, stream.interim.key)}
+                  />
                 ) : null}
                 {busy === "transcribing" && (
                   <View style={{ flexDirection: "row", gap: 10, paddingVertical: 10 }}>
@@ -510,11 +569,21 @@ export default function MeetingScreen() {
           <Text style={{ color: t.text, fontSize: 20, fontWeight: "700", fontVariant: ["tabular-nums"] }}>
             {fmtClock(shownTime)}
           </Text>
-          <Pressable disabled={recording} onPress={() => setSheet("mode")} hitSlop={8}>
-            <Text numberOfLines={1} style={{ color: t.muted, fontSize: 14 }}>
-              {modeInfo.icon} {modeInfo.label.split(" ·")[0]} ▾
+          {streaming ? (
+            <Text numberOfLines={1} style={{ fontSize: 14, color: stream.status === "live" ? t.ok : t.warn }}>
+              {stream.status === "live"
+                ? "● Live"
+                : stream.status === "connecting"
+                  ? "Connecting…"
+                  : "Reconnecting… buffering"}
             </Text>
-          </Pressable>
+          ) : (
+            <Pressable disabled={recording} onPress={() => setSheet("mode")} hitSlop={8}>
+              <Text numberOfLines={1} style={{ color: t.muted, fontSize: 14 }}>
+                {modeInfo.icon} {modeInfo.label.split(" ·")[0]} ▾
+              </Text>
+            </Pressable>
+          )}
         </View>
         <Pressable
           accessibilityRole="button"
@@ -621,6 +690,28 @@ export default function MeetingScreen() {
           onClose={() => setLineFor(null)}
         />
       )}
+    </View>
+  );
+}
+
+/** Who a streamed speaker key is (or is about to be), without changing the meeting. */
+function peekSpeaker(meeting: Meeting, key: string) {
+  const aliases = new Map(Object.entries(meeting.liveAliases ?? {}));
+  const r = resolveLiveSpeaker(meeting.participants, meeting.segments, aliases, key);
+  return r.participants.find((p) => p.id === r.id);
+}
+
+function LiveInterim({ text, speaker }: { text: string; speaker?: Participant }) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: "row", gap: 10, paddingVertical: 10 }}>
+      <Avatar name={speaker?.name ?? "?"} color={speaker?.color ?? t.muted} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 13, color: speaker?.color ?? t.muted, fontWeight: "700" }}>
+          {speaker?.name ?? "New speaker"}
+        </Text>
+        <Text style={{ color: t.muted, fontStyle: "italic", fontSize: 15, marginTop: 2 }}>{text}…</Text>
+      </View>
     </View>
   );
 }

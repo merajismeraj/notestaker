@@ -5,20 +5,26 @@ import { ensureCalendarAccess, listDayEvents, type DeviceEvent } from "@/lib/cal
 import { useTheme } from "@/lib/theme";
 import { Avatar, Button, ErrorBanner, Muted, OptionRow, Sheet } from "./ui";
 
-export type CaptureMode = "live" | "record" | "upload" | "paste";
+export type CaptureMode = "stream" | "live" | "record" | "upload" | "paste";
 
 export const MODES: { id: CaptureMode; icon: string; label: string; hint: string }[] = [
   {
+    id: "stream",
+    icon: "🗣️",
+    label: "Live · auto-detect speakers",
+    hint: "Lines appear labelled by speaker as people talk. Needs a connection; brief drops are buffered.",
+  },
+  {
     id: "record",
     icon: "👥",
-    label: "Record · auto-detect speakers",
-    hint: "Keeps recording with the screen locked. Transcribed with speakers when you stop.",
+    label: "Record · speakers after",
+    hint: "Works with a weak connection. Transcribed with speakers when you stop; best accuracy.",
   },
   {
     id: "live",
     icon: "🎙️",
-    label: "Live transcript",
-    hint: "On-device speech-to-text as people talk. Tap who's speaking to tag lines.",
+    label: "Live · tap to tag speakers",
+    hint: "On-device speech-to-text, works offline. Tap who's speaking to tag lines.",
   },
   {
     id: "upload",

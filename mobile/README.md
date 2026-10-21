@@ -6,8 +6,9 @@ Expo (React Native) app for the same meeting notes product. The Next.js app in t
 
 | | |
 |---|---|
-| **Record · auto-detect speakers** | `expo-audio` with background recording. Recording continues with the screen locked or while you switch apps. Speech-tuned AAC (mono 16 kHz, 32 kbps) comes to about 14 MB per hour. On stop, the file uploads straight to Deepgram with a short-lived token from `/api/deepgram-token`, so there is no backend size limit. |
-| **Live transcript** | `expo-speech-recognition` runs on-device when supported. You tap the person speaking to tag lines. The screen stays awake while it runs. |
+| **Live · auto-detect speakers** (default) | The microphone (`expo-audio` `useAudioStream`, 16 kHz PCM) streams to Deepgram's live API with diarization, so lines appear already labelled "Speaker 1 / Speaker 2" as people talk. Rename a speaker mid-meeting and their later lines follow, including when the rename merges them into a calendar invitee. If the connection drops, up to 60 s of audio is buffered and replayed on reconnect. Deepgram restarts speaker numbering on each connection, so voices after a drop get new labels rather than guessed ones; one rename merges them. |
+| **Record · speakers after** | `expo-audio` with background recording. Recording continues with the screen locked or while you switch apps. Speech-tuned AAC (mono 16 kHz, 32 kbps) comes to about 14 MB per hour. On stop, the file uploads straight to Deepgram with a short-lived token from `/api/deepgram-token`, so there is no backend size limit. |
+| **Live · tap to tag speakers** | `expo-speech-recognition` runs on-device when supported. You tap the person speaking to tag lines. The screen stays awake while it runs. |
 | **Import audio** | Voice memos and call recordings via the document picker. Speakers are detected automatically. |
 | **Calendar** | `expo-calendar` reads every calendar on the phone (Google, Outlook/Exchange, iCloud) with a single permission prompt and no Google OAuth or verification. Invitees become named speakers, minus declined guests and rooms. |
 | **Export** | Share sheet (text), PDF via `expo-print`, and a `.md` file. |
@@ -39,6 +40,9 @@ src/app/index.tsx            meeting list
 src/app/m/[id].tsx           capture, transcript, minutes
 src/components/              ui primitives, sheets (speakers, calendar, paste, line edit), minutes view
 src/lib/api.ts               backend calls + direct Deepgram upload
+src/lib/useLiveDiarization.ts streaming to Deepgram live: auth, buffering, reconnect, phrases by speaker
+src/lib/deepgramLive.ts      pure parsing (speaker runs, interim, audio buffer) — unit-tested in ../tests
+src/lib/useMicStream(.web).ts 16-bit PCM capture (expo-audio natively, Web Audio on web)
 src/lib/calendar.ts          device calendar → invitees
 src/lib/useLiveSpeech.ts     continuous on-device STT with auto-restart
 src/lib/useMeetingRecorder.ts background-capable recorder
@@ -49,6 +53,7 @@ src/lib/export.ts            share / PDF / markdown
 ## Known gaps
 
 - **Live mode stops when the app is backgrounded.** That's an OS rule for speech recognition. For long meetings, use Record.
-- **No live speaker labels yet.** The next step is streaming audio to Deepgram's live endpoint with diarization so speakers appear as people talk.
+- **Live speaker labels need a connection** for the whole meeting. If coverage is poor, use Record: it's fully offline until you stop, and Deepgram's pre-recorded model separates speakers more accurately.
+- **Live auto-detect on a locked screen isn't verified yet.** Background audio is enabled, and the socket should stay open while the audio session is active, but confirm it on a real device before relying on it.
 - **The backend endpoints are unauthenticated.** Before a public release, add user auth (e.g. Sign in with Apple/Google) and rate limits so nobody else can spend your Anthropic or Deepgram credit.
 - Meetings live only on the device. Sync needs a database plus auth.
