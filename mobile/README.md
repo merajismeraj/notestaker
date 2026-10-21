@@ -52,7 +52,7 @@ src/lib/export.ts            share / PDF / markdown
 
 ## Known gaps
 
-- **Live mode stops when the app is backgrounded.** That's an OS rule for speech recognition. For long meetings, use Record.
+- **"Live · tap to tag" stops when the app is backgrounded.** That's an OS rule for on-device speech recognition. For long meetings, use either auto-detect mode.
 - **Live speaker labels need a connection** for the whole meeting. If coverage is poor, use Record: it's fully offline until you stop, and Deepgram's pre-recorded model separates speakers more accurately.
 - **Live auto-detect on a locked screen isn't verified yet.** Background audio is enabled, and the socket should stay open while the audio session is active, but confirm it on a real device before relying on it.
 - **The backend endpoints are unauthenticated.** Before a public release, add user auth (e.g. Sign in with Apple/Google) and rate limits so nobody else can spend your Anthropic or Deepgram credit.
