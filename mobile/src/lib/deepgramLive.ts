@@ -21,7 +21,7 @@ export type LiveResults = {
 /** One speaker's run of words, timed relative to the connection's audio start. */
 export type LiveUtterance = { speaker: number; text: string; start: number; end: number };
 
-export function liveUrl(opts: { sampleRate: number; channels: number; lang: string }) {
+export function liveUrl(opts: { sampleRate: number; channels: number; lang: string; tag?: string }) {
   const params = new URLSearchParams({
     model: "nova-3",
     diarize: "true",
@@ -34,6 +34,7 @@ export function liveUrl(opts: { sampleRate: number; channels: number; lang: stri
     endpointing: "300",
     language: opts.lang.split("-")[0],
   });
+  if (opts.tag) params.set("tag", opts.tag);
   return `wss://api.deepgram.com/v1/listen?${params}`;
 }
 

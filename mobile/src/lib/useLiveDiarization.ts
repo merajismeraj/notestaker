@@ -1,7 +1,8 @@
 import { requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { uid } from "@core/types";
-import { getDeepgramToken } from "./api";
+import type { QuotaError } from "@core/plans";
+import { ApiError, getDeepgramToken, reportAudio, type DeepgramGrant } from "./api";
 import { interimOf, liveUrl, PendingAudio, splitBySpeaker, type LiveResults } from "./deepgramLive";
 import { useMicStream, type PcmChunk } from "./useMicStream";
 
@@ -29,6 +30,7 @@ export function useLiveDiarization(lang: string, onPhrases: (phrases: LivePhrase
   const [interim, setInterim] = useState<{ key: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reconnects, setReconnects] = useState(0);
+  const [quota, setQuota] = useState<QuotaError | null>(null);
 
   const onPhrasesRef = useRef(onPhrases);
   useEffect(() => {
@@ -45,10 +47,17 @@ export function useLiveDiarization(lang: string, onPhrases: (phrases: LivePhrase
   const retries = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnect = useRef<() => void>(() => {});
+  // Plan allowance for this session (seconds); streaming stops when it's used up.
+  const budget = useRef(Infinity);
+  const stopForLimit = useRef<() => void>(() => {});
 
   const mic = useMicStream((chunk: PcmChunk) => {
     const at = captured.current;
     captured.current += chunk.data.byteLength / (2 * chunk.sampleRate * chunk.channels);
+    if (captured.current >= budget.current && want.current) {
+      stopForLimit.current();
+      return;
+    }
     const socket = ws.current;
     if (socket?.readyState === WebSocket.OPEN && pending.current.firstAt === undefined) {
       socket.send(chunk.data);
@@ -67,21 +76,29 @@ export function useLiveDiarization(lang: string, onPhrases: (phrases: LivePhrase
       retryTimer.current = setTimeout(() => reconnect.current(), delay);
     };
 
-    let token: string;
+    let grant: DeepgramGrant;
     try {
-      token = await getDeepgramToken();
+      grant = await getDeepgramToken();
     } catch (e) {
+      if (e instanceof ApiError && e.quota) {
+        // Plan limit: retrying won't help. Stop and let the UI offer an upgrade.
+        setQuota(e.quota);
+        setError(e.message);
+        stopForLimit.current();
+        return;
+      }
       setError(e instanceof Error ? e.message : String(e));
       setStatus("reconnecting");
       retry();
       return;
     }
     if (!want.current) return;
+    if (n === 1) budget.current = grant.secondsLeft;
 
     const socket = new WebSocket(
-      liveUrl({ ...format.current, lang }),
+      liveUrl({ ...format.current, lang, tag: grant.tag }),
       // Deepgram accepts short-lived tokens via the WebSocket subprotocol.
-      ["bearer", token],
+      ["bearer", grant.token],
     );
     socket.binaryType = "arraybuffer";
     ws.current = socket;
@@ -140,6 +157,8 @@ export function useLiveDiarization(lang: string, onPhrases: (phrases: LivePhrase
 
   const start = useCallback(async () => {
     setError(null);
+    setQuota(null);
+    budget.current = Infinity;
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) {
       setError("Microphone permission was denied.");
@@ -191,8 +210,19 @@ export function useLiveDiarization(lang: string, onPhrases: (phrases: LivePhrase
     setInterim(null);
     setStatus("idle");
     await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false }).catch(() => {});
+    await reportAudio(captured.current);
     return captured.current;
   }, [mic]);
+
+  useEffect(() => {
+    stopForLimit.current = () => {
+      if (!want.current) return;
+      if (budget.current !== Infinity && captured.current >= budget.current) {
+        setError("You've used this month's speaker detection on your plan. On-device transcription still works.");
+      }
+      void stop();
+    };
+  }, [stop]);
 
   useEffect(
     () => () => {
@@ -203,5 +233,5 @@ export function useLiveDiarization(lang: string, onPhrases: (phrases: LivePhrase
     [],
   );
 
-  return { status, interim, error, reconnects, start, stop };
+  return { status, interim, error, quota, reconnects, start, stop };
 }

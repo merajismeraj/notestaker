@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { checkAudio, recordUsage } from "@/server/accounts";
+import { isResponse, requireAccount } from "@/server/http";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -20,6 +22,11 @@ export async function GET() {
  * Query: ?lang=en-US
  */
 export async function POST(req: Request) {
+  const account = await requireAccount(req);
+  if (isResponse(account)) return account;
+  const blocked = checkAudio(account);
+  if (blocked) return NextResponse.json(blocked, { status: 402 });
+
   const key = process.env.DEEPGRAM_API_KEY;
   if (!key) {
     return NextResponse.json(
@@ -41,6 +48,7 @@ export async function POST(req: Request) {
     smart_format: "true",
     punctuate: "true",
     language: lang.split("-")[0],
+    tag: account.user.id,
   });
 
   const dg = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
@@ -57,7 +65,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Transcription failed." }, { status: 502 });
   }
 
-  const data = (await dg.json()) as { results?: { utterances?: DeepgramUtterance[] } };
+  const data = (await dg.json()) as {
+    metadata?: { duration?: number };
+    results?: { utterances?: DeepgramUtterance[] };
+  };
+  // This path proxies the audio, so the duration Deepgram reports is authoritative.
+  await recordUsage(account.user.id, { audioSeconds: data.metadata?.duration ?? 0 });
   const utterances = (data.results?.utterances ?? [])
     .filter((u) => u.transcript.trim())
     .map((u) => ({ speaker: u.speaker ?? 0, text: u.transcript.trim(), t: u.start }));

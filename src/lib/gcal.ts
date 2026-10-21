@@ -29,12 +29,17 @@ type GIS = {
       }) => TokenClient;
       revoke: (token: string, done?: () => void) => void;
     };
+    id: {
+      initialize: (cfg: { client_id: string; callback: (r: { credential?: string }) => void }) => void;
+      renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
+    };
   };
 };
 
 export const calendarConfigured = () => Boolean(CLIENT_ID);
 
-function loadGis(): Promise<GIS> {
+/** Loads Google Identity Services once (shared by Calendar and Sign in with Google). */
+export function loadGis(): Promise<GIS> {
   const w = window as unknown as { google?: GIS };
   if (w.google?.accounts?.oauth2) return Promise.resolve(w.google);
   return new Promise((resolve, reject) => {

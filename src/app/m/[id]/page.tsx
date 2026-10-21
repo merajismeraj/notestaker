@@ -22,8 +22,17 @@ import type { Minutes } from "@/lib/schema";
 import { deleteMeeting, getMeeting, putAudio, saveMeeting } from "@/lib/store";
 import { fmtClock, uid, type Meeting, type Segment } from "@/lib/types";
 import { speechSupported, useSpeech } from "@/lib/useSpeech";
+import { AccountSheet } from "@/components/AccountSheet";
+import { isQuotaError, notifyAccountChanged } from "@/lib/account-client";
 
-type Sheet = null | "speakers" | "mode" | "paste" | "calendar";
+type Sheet = null | "speakers" | "mode" | "paste" | "calendar" | "account";
+
+/** Turns an API failure into a message; quota errors also flag the paywall. */
+function apiFailure(res: Response, data: { error?: string }, fallback: string) {
+  if (res.status === 401) notifyAccountChanged(); // session expired → AuthGate shows sign-in
+  return Object.assign(new Error(data.error || fallback), { quota: isQuotaError(data) });
+}
+
 type WakeLock = { release: () => Promise<void> };
 
 export default function MeetingPage() {
@@ -36,6 +45,7 @@ export default function MeetingPage() {
   const [activeId, setActiveId] = useState<string>("");
   const [busy, setBusy] = useState<null | "transcribing" | "summarising">(null);
   const [error, setError] = useState<string | null>(null);
+  const [quota, setQuota] = useState(false);
   const [diarize, setDiarize] = useState(false);
   const [recording, setRecording] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -153,7 +163,8 @@ export default function MeetingPage() {
         body: blob,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Transcription failed.");
+      if (!res.ok) throw apiFailure(res, data, "Transcription failed.");
+      notifyAccountChanged();
       if (!data.utterances.length) throw new Error("No speech detected in the audio.");
       update((m) => {
         const r = fromDiarized(data.utterances, m.participants, offset);
@@ -162,6 +173,7 @@ export default function MeetingPage() {
       setSheet("speakers");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setQuota(Boolean((e as { quota?: boolean }).quota));
     } finally {
       setBusy(null);
     }
@@ -249,12 +261,14 @@ export default function MeetingPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not generate minutes.");
+      if (!res.ok) throw apiFailure(res, data, "Could not generate minutes.");
+      notifyAccountChanged();
       update((m) => ({ ...m, minutes: data.minutes as Minutes, minutesAt: Date.now(), done: [] }));
       setTab("minutes");
       window.scrollTo({ top: 0 });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setQuota(Boolean((e as { quota?: boolean }).quota));
     } finally {
       setBusy(null);
     }
@@ -335,7 +349,16 @@ export default function MeetingPage() {
           </button>
         </div>
 
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error row" style={{ flexWrap: "nowrap" }}>
+            <span style={{ flex: 1 }}>{error}</span>
+            {quota && (
+              <button className="btn small primary" onClick={() => setSheet("account")}>
+                See plans
+              </button>
+            )}
+          </div>
+        )}
 
         {tab === "transcript" && (
           <>
@@ -574,6 +597,7 @@ export default function MeetingPage() {
           onClose={() => setSheet(null)}
         />
       )}
+      {sheet === "account" && <AccountSheet onClose={() => setSheet(null)} />}
       {sheet === "calendar" && (
         <CalendarSheet
           linkedId={meeting.calendar?.eventId}

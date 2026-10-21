@@ -1,9 +1,12 @@
-import { router, useFocusEffect } from "expo-router";
+import { router, Stack, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fmtClock, PALETTE, uid, type Meeting } from "@core/types";
+import { PLANS } from "@core/plans";
+import { AccountSheet } from "@/components/AccountSheet";
 import { Button, Card, Muted } from "@/components/ui";
+import { useAccount } from "@/lib/account";
 import { listMeetings, saveMeeting } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
 
@@ -11,11 +14,14 @@ export default function Home() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
+  const { account, refresh } = useAccount();
 
   useFocusEffect(
     useCallback(() => {
       listMeetings().then(setMeetings);
-    }, []),
+      void refresh(); // usage may have changed in a meeting
+    }, [refresh]),
   );
 
   const create = async () => {
@@ -38,6 +44,25 @@ export default function Home() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
+      <Stack.Screen
+        options={{
+          headerRight: () =>
+            account ? (
+              <Pressable
+                onPress={() => setShowAccount(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Account"
+                hitSlop={8}
+              >
+                <Text style={{ color: t.accent, fontWeight: "700" }}>
+                  {PLANS[account.plan].name}
+                  {account.trialEndsAt ? " trial" : ""}
+                </Text>
+              </Pressable>
+            ) : null,
+        }}
+      />
+      <AccountSheet visible={showAccount} onClose={() => setShowAccount(false)} />
       <FlatList
         data={meetings ?? []}
         keyExtractor={(m) => m.id}

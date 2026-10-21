@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AuthGate } from "@/components/AuthGate";
 import { RegisterSW } from "@/components/RegisterSW";
 
 export const metadata: Metadata = {
@@ -24,7 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <div className="app">{children}</div>
+        <div className="app">
+          <AuthGate>{children}</AuthGate>
+        </div>
         <RegisterSW />
       </body>
     </html>

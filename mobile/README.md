@@ -47,6 +47,9 @@ src/lib/calendar.ts          device calendar → invitees
 src/lib/useLiveSpeech.ts     continuous on-device STT with auto-restart
 src/lib/useMeetingRecorder.ts background-capable recorder
 src/lib/store.ts             AsyncStorage persistence
+src/lib/session.ts           session token in SecureStore (Keychain/Keystore)
+src/lib/account.tsx          account context; Stack.Protected gates sign-in
+src/app/sign-in.tsx          Sign in with Apple (iOS) + email code
 src/lib/export.ts            share / PDF / markdown
 ```
 
@@ -55,5 +58,6 @@ src/lib/export.ts            share / PDF / markdown
 - **"Live · tap to tag" stops when the app is backgrounded.** That's an OS rule for on-device speech recognition. For long meetings, use either auto-detect mode.
 - **Live speaker labels need a connection** for the whole meeting. If coverage is poor, use Record: it's fully offline until you stop, and Deepgram's pre-recorded model separates speakers more accurately.
 - **Live auto-detect on a locked screen isn't verified yet.** Background audio is enabled, and the socket should stay open while the audio session is active, but confirm it on a real device before relying on it.
-- **The backend endpoints are unauthenticated.** Before a public release, add user auth (e.g. Sign in with Apple/Google) and rate limits so nobody else can spend your Anthropic or Deepgram credit.
+- **Google sign-in on mobile isn't added yet.** iOS offers Apple + email code, and Android offers email code. Adding Google needs native OAuth client IDs. The server already accepts any client ID listed in `GOOGLE_CLIENT_IDS`.
+- **Subscriptions:** digital subscriptions sold inside the app generally have to go through App Store / Play billing (RevenueCat makes that one SDK). `EXPO_PUBLIC_UPGRADE_URL` links out instead. Check the current store rules for your regions before shipping that.
 - Meetings live only on the device. Sync needs a database plus auth.

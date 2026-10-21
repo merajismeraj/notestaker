@@ -3,6 +3,8 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { NextResponse } from "next/server";
 import { MinutesRequestSchema, MinutesSchema } from "@/lib/schema";
 import { fmtClock } from "@/lib/types";
+import { checkMinutes, recordUsage } from "@/server/accounts";
+import { isResponse, requireAccount } from "@/server/http";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -22,6 +24,8 @@ Write minutes that someone who missed the meeting can act on:
 - Write in the same language as the transcript.`;
 
 export async function POST(req: Request) {
+  const account = await requireAccount(req);
+  if (isResponse(account)) return account;
   if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
     return NextResponse.json(
       { error: "Server is missing ANTHROPIC_API_KEY." },
@@ -34,6 +38,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
   const { title, date, lang, participants, invitees, segments } = body.data;
+
+  const meetingSeconds = Math.max(0, ...segments.map((s) => s.t));
+  const blocked = checkMinutes(account, meetingSeconds);
+  if (blocked) return NextResponse.json(blocked, { status: 402 });
 
   const transcript = segments
     .map((s) => `[${fmtClock(s.t)}] ${s.speaker}: ${s.text.trim()}`)
@@ -77,6 +85,8 @@ Produce the minutes.`;
         { status: 502 },
       );
     }
+    // Metered only on success, so refusals and errors don't cost the user.
+    await recordUsage(account.user.id, { aiMinutes: 1 });
     return NextResponse.json({ minutes: response.parsed_output });
   } catch (error) {
     if (error instanceof Anthropic.RateLimitError) {

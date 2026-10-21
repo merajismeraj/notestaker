@@ -35,6 +35,22 @@ On a phone, the mic needs HTTPS. Deploy (e.g. `vercel`) or tunnel your dev serve
 
 The browser gets a short-lived read-only token through Google Identity Services, so there is no client secret and no server-side token storage. Only guest names (not emails) are sent to the server.
 
+## Accounts, plans & metering
+
+Every endpoint that costs money requires sign-in and is metered per user per month:
+
+| Endpoint | Meter | Limit enforced |
+|---|---|---|
+| `POST /api/minutes` | +1 AI minutes on success | monthly AI minutes, max meeting length |
+| `POST /api/transcribe` (web) | Deepgram-reported duration | monthly cloud audio |
+| `POST /api/deepgram-token` (mobile) | app reports streamed/uploaded seconds via `/api/usage/audio` | blocks new tokens at 0; app stops live streaming when the allowance runs out |
+
+- **Sign-in:** Google (web), Apple (iOS), and email code (both). Accounts link automatically by verified email. The server issues a 30-day session: an httpOnly cookie on web, the Keychain/Keystore on mobile.
+- **Plans** live in `src/lib/plans.ts`, shared by server and clients. New accounts get a 7-day Pro trial. Over a limit, the server returns `402` with `{code: "quota"}`, and both apps show **See plans**.
+- **Billing isn't wired yet.** `users.plan` is the switch. Set it from Stripe (web) or RevenueCat (App Store/Play) webhooks. Until then, `PLAN_OVERRIDES` grants plans by email.
+- **Data:** Postgres via Neon (`DATABASE_URL`) in production, embedded PGlite locally (`.data/`) and in tests. No setup needed to run it.
+- **Tests:** `npm test` covers token verification (local keys), account linking, trials, quotas, the email-code lifecycle and sessions.
+
 ## Architecture
 
 ```
@@ -49,6 +65,9 @@ tests/                        `npm test`: live diarization parsing and speaker m
 src/lib/schema.ts             minutes schema shared by server and UI
 src/lib/gcal.ts               Google Identity Services token flow + Calendar events → invitees
 src/lib/store.ts              localStorage (meetings) + IndexedDB (audio)
+src/lib/plans.ts              plan catalogue + limits (shared with mobile)
+src/server/                   db (Neon/PGlite), sessions, Apple/Google token checks, accounts & quotas, email
+src/app/api/auth/*            google · apple · email/start · email/verify · session (GET / DELETE)
 ```
 
 Minutes use Claude structured outputs, so the response always matches `MinutesSchema`. No JSON repair is needed. Refusals are handled with server-side fallbacks (`fallbacks: "default"`).
@@ -59,4 +78,5 @@ Minutes use Claude structured outputs, so the response always matches `MinutesSc
 - **Vercel's request body limit is 4.5 MB.** At 24 kbps that's about 25 minutes of audio through `/api/transcribe`. For longer meetings, self-host, or move uploads to direct-to-Deepgram with short-lived keys or to blob storage.
 - Firefox has no Web Speech API. Use Record, Upload or Paste there.
 - `calendar.events.readonly` is a sensitive scope. Going public for more than 100 users requires Google's app verification, which takes days to weeks, so plan for it before launch.
-- Meetings are stored only in the browser. Add a database plus auth if you need team sharing or sync.
+- Meetings are stored only in the browser. Accounts exist now, so syncing meetings is a database table away, not a rewrite.
+- Mobile reports its own Deepgram usage, because that audio goes straight to Deepgram. Requests carry `tag=<user id>`, so you can reconcile against Deepgram's usage API before billing overages.

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { audioSecondsLeft, checkAudio } from "@/server/accounts";
+import { isResponse, requireAccount } from "@/server/http";
 
 export const runtime = "nodejs";
 
@@ -7,7 +9,12 @@ export const runtime = "nodejs";
  * straight to Deepgram (no request-size limit, no proxying), while the API
  * key stays on the server.
  */
-export async function POST() {
+export async function POST(req: Request) {
+  const account = await requireAccount(req);
+  if (isResponse(account)) return account;
+  const blocked = checkAudio(account);
+  if (blocked) return NextResponse.json(blocked, { status: 402 });
+
   const key = process.env.DEEPGRAM_API_KEY;
   if (!key) {
     return NextResponse.json(
@@ -30,5 +37,12 @@ export async function POST() {
     access_token: string;
     expires_in: number;
   };
-  return NextResponse.json({ token: access_token, expiresIn: expires_in });
+  return NextResponse.json({
+    token: access_token,
+    expiresIn: expires_in,
+    // The app tags Deepgram requests with this so usage can be reconciled per user,
+    // and stops streaming when the allowance runs out mid-meeting.
+    tag: account.user.id,
+    secondsLeft: audioSecondsLeft(account),
+  });
 }

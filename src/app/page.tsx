@@ -5,10 +5,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { listMeetings, saveMeeting } from "@/lib/store";
 import { fmtClock, PALETTE, uid, type Meeting } from "@/lib/types";
+import { AccountSheet } from "@/components/AccountSheet";
+import { useAccount } from "@/components/AuthGate";
+import { PLANS } from "@/lib/plans";
 
 export default function Home() {
   const router = useRouter();
   const [meetings, setMeetings] = useState<Meeting[] | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
+  const { account } = useAccount();
 
   useEffect(() => setMeetings(listMeetings()), []);
 
@@ -34,6 +39,10 @@ export default function Home() {
     <>
       <header className="topbar">
         <h1>Notestaker</h1>
+        <button className="btn small" onClick={() => setShowAccount(true)} aria-label="Account">
+          {PLANS[account.plan].name}
+          {account.trialEndsAt ? " trial" : ""}
+        </button>
       </header>
       <main>
         {meetings && meetings.length === 0 && (
@@ -80,6 +89,7 @@ export default function Home() {
           </div>
         )}
       </main>
+      {showAccount && <AccountSheet onClose={() => setShowAccount(false)} />}
       <button className="btn primary fab" onClick={create}>
         ＋ New meeting
       </button>

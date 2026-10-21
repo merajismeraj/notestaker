@@ -6,3 +6,6 @@ out
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# Local embedded Postgres (PGlite)
+.data

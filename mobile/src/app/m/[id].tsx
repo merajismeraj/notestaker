@@ -34,7 +34,9 @@ import {
   type CaptureMode,
 } from "@/components/Sheets";
 import { Avatar, Button, Card, ErrorBanner, Muted, OptionRow, SectionTitle, Sheet } from "@/components/ui";
-import { diarizationEnabled, generateMinutes, transcribeFile } from "@/lib/api";
+import { ApiError, diarizationEnabled, generateMinutes, transcribeFile } from "@/lib/api";
+import { AccountSheet } from "@/components/AccountSheet";
+import { useAccount } from "@/lib/account";
 import type { DeviceEvent } from "@/lib/calendar";
 import { shareMarkdownFile, sharePdf, shareText } from "@/lib/export";
 import { deleteMeeting, getMeeting, saveMeeting, setAudioUri } from "@/lib/store";
@@ -58,6 +60,9 @@ export default function MeetingScreen() {
   const [activeId, setActiveId] = useState("");
   const [busy, setBusy] = useState<null | "transcribing" | "summarising">(null);
   const [error, setError] = useState<string | null>(null);
+  const [quota, setQuota] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const { refresh: refreshAccount } = useAccount();
   const [diarize, setDiarize] = useState(false);
   const [now, setNow] = useState(0);
   /** Timer origin for the current capture session (refs mirror it for callbacks). */
@@ -176,6 +181,7 @@ export default function MeetingScreen() {
       setSheet("speakers");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setQuota(e instanceof ApiError && e.quota !== null);
     } finally {
       setBusy(null);
     }
@@ -212,6 +218,7 @@ export default function MeetingScreen() {
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setQuota(e instanceof ApiError && e.quota !== null);
     }
   };
 
@@ -236,6 +243,7 @@ export default function MeetingScreen() {
       await transcribe(uri, "audio/mp4", offset);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setQuota(e instanceof ApiError && e.quota !== null);
     }
   };
 
@@ -247,10 +255,12 @@ export default function MeetingScreen() {
     try {
       const minutes = await generateMinutes(meeting);
       update((m) => ({ ...m, minutes, minutesAt: Date.now(), done: [] }));
+      void refreshAccount();
       setTab("minutes");
       scrollRef.current?.scrollTo({ y: 0, animated: false });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setQuota(e instanceof ApiError && e.quota !== null);
     } finally {
       setBusy(null);
     }
@@ -354,6 +364,15 @@ export default function MeetingScreen() {
         </View>
 
         <ErrorBanner message={error ?? live.error ?? (stream.status === "live" ? null : stream.error)} />
+        {(quota || stream.quota) && (error || stream.error) ? (
+          <Button
+            small
+            variant="primary"
+            label="See plans"
+            style={{ alignSelf: "flex-start", marginTop: -4, marginBottom: 12 }}
+            onPress={() => setShowAccount(true)}
+          />
+        ) : null}
 
         {tab === "transcript" && (
           <>
@@ -621,6 +640,7 @@ export default function MeetingScreen() {
         </View>
       </View>
 
+      <AccountSheet visible={showAccount} onClose={() => setShowAccount(false)} />
       {sheet === "speakers" && (
         <SpeakersSheet
           visible

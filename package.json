@@ -8,10 +8,13 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts tests/*.test.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
+    "@electric-sql/pglite": "^0.5.10",
+    "@neondatabase/serverless": "^1.2.0",
+    "jose": "^6.2.13",
     "next": "^15.5.28",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
